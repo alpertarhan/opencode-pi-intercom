@@ -1,5 +1,9 @@
 # opencode-pi-intercom
 
+[![npm version](https://img.shields.io/npm/v/opencode-pi-intercom)](https://www.npmjs.com/package/opencode-pi-intercom)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-pi-intercom)](https://www.npmjs.com/package/opencode-pi-intercom)
+[![License: MIT](https://img.shields.io/npm/l/opencode-pi-intercom)](./LICENSE)
+
 OpenCode plugin that joins the [omp-intercom](https://github.com/ersintarhan/omp-intercom) / [pi-intercom](https://www.npmjs.com/package/pi-intercom) broker as a peer. Your OpenCode sessions appear in the same roster as omp and pi sessions, receive injected prompts from them, reply back, and expose an `intercom` tool to the OpenCode agent — agentic messaging and orchestration across all three agents on one machine.
 
 ```
@@ -13,6 +17,8 @@ omp session ◄──► broker (omp-intercom) ◄──► pi session
 Models distributed through OpenCode (e.g. Meta's Muse Spark on OpenCode Zen) are only reachable from OpenCode clients. With this plugin an omp/pi orchestrator delegates work to OpenCode (`ask`), OpenCode runs it with its own model and tools, and the answer flows back over the same broker.
 
 ## Install (npm)
+
+Package: [opencode-pi-intercom on npm](https://www.npmjs.com/package/opencode-pi-intercom)
 
 ```jsonc
 // ~/.config/opencode/opencode.json (or opencode.jsonc, or .opencode/opencode.json)
