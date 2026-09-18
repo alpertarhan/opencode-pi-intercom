@@ -1,22 +1,34 @@
-# opencode-pi-intercom
+<div align="center">
 
-[![npm version](https://img.shields.io/npm/v/opencode-pi-intercom)](https://www.npmjs.com/package/opencode-pi-intercom)
-[![npm downloads](https://img.shields.io/npm/dm/opencode-pi-intercom)](https://www.npmjs.com/package/opencode-pi-intercom)
-[![License: MIT](https://img.shields.io/npm/l/opencode-pi-intercom)](./LICENSE)
+<a href="https://github.com/betulcalik/opencode-pi-intercom">
+  <img src="https://raw.githubusercontent.com/betulcalik/opencode-pi-intercom/main/docs/assets/banner.svg" alt="opencode-pi-intercom" width="860" />
+</a>
 
-OpenCode plugin that joins the [omp-intercom](https://github.com/ersintarhan/omp-intercom) / [pi-intercom](https://www.npmjs.com/package/pi-intercom) broker as a peer. Your OpenCode sessions appear in the same roster as omp and pi sessions, receive injected prompts from them, reply back, and expose an `intercom` tool to the OpenCode agent — agentic messaging and orchestration across all three agents on one machine.
+[![npm version](https://img.shields.io/npm/v/opencode-pi-intercom?color=60a5fa)](https://www.npmjs.com/package/opencode-pi-intercom)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-pi-intercom?color=60a5fa)](https://www.npmjs.com/package/opencode-pi-intercom)
+[![license](https://img.shields.io/npm/l/opencode-pi-intercom?color=22c55e)](./LICENSE)
+[![tests](https://img.shields.io/badge/tests-45%2F45%20green-22c55e)](#testing)
+[![OpenCode plugin](https://img.shields.io/badge/OpenCode-plugin-fbbf24)](https://opencode.ai/docs/plugins/)
 
-```
-omp session ◄──► broker (omp-intercom) ◄──► pi session
-                        ▲
-                        └────────── opencode (this plugin)
-```
+### Agentic intercom between OpenCode, omp and pi sessions
 
-## Why
+Join the [omp-intercom](https://github.com/ersintarhan/omp-intercom) /
+[pi-intercom](https://www.npmjs.com/package/pi-intercom) broker as a first-class
+peer: OpenCode sessions appear in the same roster, receive injected prompts,
+reply back, and expose an `intercom` tool to the agent — cross-agent
+orchestration on one machine.
 
-Models distributed through OpenCode (e.g. Meta's Muse Spark on OpenCode Zen) are only reachable from OpenCode clients. With this plugin an omp/pi orchestrator delegates work to OpenCode (`ask`), OpenCode runs it with its own model and tools, and the answer flows back over the same broker.
+**One broker · wire-compatible protocol v1 · ask/reply threading · receipt chain · auto-reply**
 
-## Install (npm)
+[Install](#install) · [Why](#why) · [How it works](#how-it-works) · [Usage](#usage) · [Semantics](#semantics) · [Configuration](#configuration) · [Testing](#testing) · [Troubleshooting](#troubleshooting)
+
+</div>
+
+## Install
+
+Requires the official OpenCode CLI ≥ 1.18 (`bun add -g opencode-ai`) and an
+existing omp-intercom setup (the broker belongs to it — this plugin reuses it
+and never ships its own copy).
 
 Package: [opencode-pi-intercom on npm](https://www.npmjs.com/package/opencode-pi-intercom)
 
@@ -28,25 +40,103 @@ Package: [opencode-pi-intercom on npm](https://www.npmjs.com/package/opencode-pi
 }
 ```
 
-OpenCode bun-installs the package (and its `@opencode-ai/plugin` dependency) automatically at startup. Requires the official OpenCode CLI ≥ 1.18 (`bun add -g opencode-ai`). Then start opencode — on first instance init the plugin connects and logs:
+OpenCode bun-installs the package (and its `@opencode-ai/plugin` dependency)
+automatically at startup. On first instance init the plugin connects and logs:
 
 ```
 [opencode-pi-intercom] connected to broker as "opencode" (session …)
 ```
 
-The broker itself belongs to omp-intercom; the plugin auto-spawns it from the installed `omp-intercom` package when the socket is missing (`omp install npm:omp-intercom`). It never ships its own broker copy.
+## Quick start
 
-## Install (local checkout)
+From an omp/pi session (the other side of the bridge):
 
-```bash
-mkdir -p ~/.config/opencode/plugins
-cp -R . ~/.config/opencode/plugins/opencode-pi-intercom
-rm -rf ~/.config/opencode/plugins/opencode-pi-intercom/node_modules
-cat > ~/.config/opencode/plugins/opencode-pi-intercom.ts <<'EOF'
-export { IntercomPlugin } from "./opencode-pi-intercom/src/index.ts";
-EOF
-# ~/.config/opencode/opencode.json: { "plugin": ["./plugins/opencode-pi-intercom.ts"] }
+```typescript
+intercom({ action: "list" })
+// → • opencode-dev (9f2c3244) — ~/researches (opencode/muse-spark-1.3 · idle)
+
+intercom({
+  action: "ask",
+  to: "opencode",
+  message: "Refactor AuthService with retry logic — report the diff when done."
+})
+// → blocks until the OpenCode agent finishes and replies
 ```
+
+Inside OpenCode, the agent gets the same tool:
+
+```typescript
+intercom({ action: "list" })
+intercom({ action: "send", to: "planner", message: "Migration done, 3 files changed." })
+intercom({ action: "ask",   to: "planner", message: "JWT or session cookies?" })
+intercom({ action: "reply", message: "Session cookies — browser-first." })
+intercom({ action: "status" })
+```
+
+> [!IMPORTANT]
+> The broker is shared infrastructure owned by omp-intercom. This plugin
+> auto-spawns it from the installed package when the socket is missing — it
+> never bundles a second broker, so there is exactly one roster per machine.
+
+## Why
+
+Models distributed through OpenCode — e.g. Meta's Muse Spark on OpenCode Zen —
+are only reachable from OpenCode clients. Delegation fixes that: an omp/pi
+orchestrator sends an `ask`, OpenCode runs it with its own model and tools, and
+the answer flows back over the same broker.
+
+| Without a bridge | `opencode-pi-intercom` |
+| --- | --- |
+| Muse Spark unusable from omp/pi | Delegate via `ask`, answer returns |
+| Copy-paste context between terminals | Structured messages with receipts |
+| No cross-agent replies | `replyTo`-threaded ask/reply with timeouts |
+| Per-agent tooling, no shared roster | One roster, one wire protocol |
+| Manual result transcription | Auto-reply of the final assistant text |
+
+The design principle is simple:
+
+> **One broker. One wire protocol. Every agent a peer.**
+
+## How it works
+
+```text
+omp session                pi session
+    │                          │
+    └────────────┬─────────────┘
+                 ▼
+          ┌────────────┐        ┌──────────────────────────────┐
+          │   broker   │◄──────►│ opencode + this plugin       │
+          │ (shared)   │  v1    │ register · presence · inject │
+          └────────────┘        └──────────────────────────────┘
+```
+
+| Layer | Responsibility |
+| --- | --- |
+| **Registration** | Joins the roster with pid, cwd, live model label, and status. Duplicate peer names warn — sends stay fail-closed. |
+| **Inbound** | Broker messages are acknowledged `receiver_received`, injected into the active OpenCode session as a prompt, then acknowledged `injected`. Attachments render as fenced blocks. |
+| **Outbound** | The agent-facing `intercom` tool maps `send`/`ask`/`reply` onto the same wire; replies to our own asks resolve the tool call and are never re-injected. |
+| **Ask / reply** | `expectsReply` + `replyTo` threading, bounded ask timeout with `cancel_ask`, mailbox redelivery for disconnected named peers. |
+| **Auto-reply** | On `session.idle`, the newest assistant text is sent as the ask reply — only when it is newer than a pre-injection snapshot, so stale text never ships. |
+| **Liveness** | 30 s heartbeat probes detect half-open sockets; reconnect uses bounded backoff and re-claims the same intercom session id when `stableId` is set. |
+
+## Usage
+
+| Surface | Behavior |
+| --- | --- |
+| `intercom` tool (agent) | `list` / `list-cwd` / `send` / `ask` / `reply` / `status` — mirrors the omp/pi tool so orchestration prompts read the same on both sides. |
+| Prompt injection | Inbound messages arrive prefixed with `[intercom] Message from <name>`; ask messages include the exact `reply` invocation. |
+| `inboundTrigger` | `always` runs the agent on every message; `replies` only for asks; `never` injects context-only (`noReply`). |
+| `bridgeModel` | Force a model such as `opencode/muse-spark-1.3` on injected prompts, per request. |
+| Manual peer | `PEER_NAME=dev-1 bun test/peer.ts wait` — stays registered for live checks; auto-acks asks. |
+
+## Semantics
+
+- **Receipt chain** — senders observe `receiver_received` → `injected (opencode session …)` for every message.
+- **Staleness guard** — auto-reply ships only text produced after the ask was injected.
+- **Ask race safety** — a reply arriving before the ask handler registers is buffered (bounded, 30 s TTL) and still resolves the ask.
+- **Presence** — `idle` / `thinking` / `tool:<name>` from session status and tool execution events; the model label tracks the live session model.
+- **Pending-ask hygiene** — inbound asks expire after `askTimeoutMs`; they never leak.
+- **Scope isolation** — peers see each other only when `PI_INTERCOM_SCOPE_ID` matches; leave unset for the shared default scope.
 
 ## Configuration
 
@@ -56,72 +146,64 @@ EOF
 {
   "enabled": true,
   "name": "opencode",            // roster name; MUST be unique per instance
-  "agentDir": null,              // broker owner dir; default PI_CODING_AGENT_DIR or ~/.omp/agent
-                                  // set "~/.pi/agent" to join a pi-intercom roster instead
-  "sessionID": null,             // fixed target session for injections; default: active/latest
+  "agentDir": null,              // default PI_CODING_AGENT_DIR or ~/.omp/agent
+                                  // "~/.pi/agent" joins a pi-intercom roster instead
+  "sessionID": null,             // fixed target session; default: active/latest
   "bridgeModel": null,           // "providerID/modelID" forced on injected prompts
-                                  // e.g. "opencode/muse-spark-1.3"
-  "autoReply": true,             // on session.idle, send the newest assistant text as the ask reply
-                                  // (skips when the agent already replied via the intercom tool)
-  "inboundTrigger": "always",    // always | replies | never (falls back to the shared intercom config)
+  "autoReply": true,             // auto-send the newest assistant text as the ask reply
+  "inboundTrigger": "always",    // always | replies | never
   "askTimeoutMs": 600000,
-  "stableId": null               // restart-stable intercom session id (mailbox redelivery)
+  "stableId": null               // restart-stable intercom session id
 }
 ```
 
-Env overrides: `OPENCODE_INTERCOM_ENABLED`, `OPENCODE_INTERCOM_NAME`, `OPENCODE_INTERCOM_AGENT_DIR`, `OPENCODE_INTERCOM_SESSION_ID`, `OPENCODE_INTERCOM_MODEL`, `OPENCODE_INTERCOM_AUTO_REPLY`, `OPENCODE_INTERCOM_CONFIG`. Shared vars honored: `PI_CODING_AGENT_DIR`, `PI_INTERCOM_SCOPE_ID`, `PI_INTERCOM_ASK_TIMEOUT_MS`, `PI_INTERCOM_LIVENESS_*`.
-
-## Agent usage
-
-The OpenCode agent gets an `intercom` tool mirroring the omp/pi one:
-
-```typescript
-intercom({ action: "list" })
-intercom({ action: "send", to: "hearth-mahjong-developer", message: "AuthService retry eklendi mi?" })
-intercom({ action: "ask", to: "planner", message: "JWT mi session cookie mi?" })  // blocks until reply
-intercom({ action: "reply", message: "Session cookies — browser-first." })
-intercom({ action: "status" })
-```
-
-Inbound messages arrive as prompts prefixed with `[intercom] Message from <name>`; when they expect a reply the prompt includes the exact `reply` invocation. Replies to the agent's own outbound asks resolve the tool call directly — they are never re-injected as prompts. Without `@opencode-ai/plugin` resolvable the tool is absent but messaging still works (`autoReply` covers ask flows).
-
-## Semantics
-
-- **Receipts**: inbound messages are acknowledged `receiver_received` immediately, then `injected (opencode session …)` once the prompt is enqueued — the omp-side sender sees the full chain.
-- **autoReply staleness guard**: the plugin snapshots the last assistant text before injecting an ask and only auto-replies with text produced *after* it — stale messages are never resent.
-- **Ask race safety**: a reply that arrives before the ask's handler registers is buffered (bounded) and still resolves the ask.
-- **Presence**: `idle` / `thinking` / `tool:<name>` from session status + tool execution events; the model label tracks the live session model (e.g. `opencode/muse-spark-1.3`).
-- **Liveness**: 30s heartbeat probes detect half-open sockets and reconnect with backoff; registration re-claims the same intercom session id when `stableId` is configured.
+Env overrides: `OPENCODE_INTERCOM_ENABLED`, `OPENCODE_INTERCOM_NAME`,
+`OPENCODE_INTERCOM_AGENT_DIR`, `OPENCODE_INTERCOM_SESSION_ID`,
+`OPENCODE_INTERCOM_MODEL`, `OPENCODE_INTERCOM_AUTO_REPLY`,
+`OPENCODE_INTERCOM_CONFIG`. Shared vars honored: `PI_CODING_AGENT_DIR`,
+`PI_INTERCOM_SCOPE_ID`, `PI_INTERCOM_ASK_TIMEOUT_MS`, `PI_INTERCOM_LIVENESS_*`.
 
 ## Testing
 
 ```bash
-bun test   # 45 tests: unit (framing/protocol/paths/config/session bridge),
-           # client vs fake broker, and full-loop integration against the
-           # real omp-intercom broker in an isolated temp agent dir
+bun test   # 45 tests, green
 ```
 
-Integration tests auto-skip when the real broker source is absent; point `INTERCOM_TEST_BROKER` at a broker.ts to force them. Manual peer for live checks:
+| Suite | Covers |
+| --- | --- |
+| Unit | framing (split/oversize/malformed frames), protocol guard, paths, config precedence |
+| Session bridge | target-session resolution, injection bodies, assistant-text extraction, event mapping |
+| Client ↔ fake broker | register, send/ack, ask resolve/timeout + `cancel_ask`, receipts, presence, liveness + half-open detection |
+| Real-broker integration | roster, ask round-trip, receipt chain, fail-closed sends, mailbox redelivery |
+| Hub full loop | inbound ask → injection → simulated run → auto-reply; staleness guard; `noReply`; tool actions; no re-inject of own ask replies |
 
-```bash
-PEER_NAME=dev-1 bun test/peer.ts wait          # stays registered, auto-acks asks
-PEER_NAME=dev-1 bun test/peer.ts ask --to opencode --text "ping" --timeout-ms 600000
-```
+Integration suites auto-skip without the real broker source; point
+`INTERCOM_TEST_BROKER` at a `broker.ts` to force them.
 
 ## Troubleshooting
 
 - **`intercom tool disabled` in logs** — `@opencode-ai/plugin` did not resolve; for local installs add `~/.config/opencode/package.json` with `{ "dependencies": { "@opencode-ai/plugin": "^1.18.31" } }`.
-- **Asks stall** — the target session may be busy with a long agent run: injected prompts queue behind it. Wait, or `POST /session/:id/abort`, or set `sessionID` to a dedicated session.
-- **Ambiguous sends / duplicate names** — two instances registered with the same `name` make sends to that name fail closed. Give each instance a unique `name` (or `OPENCODE_INTERCOM_NAME`). Short-lived test peers should use unique `PEER_NAME`s too.
-- **No plugin load in serve mode** — Open Design's embedded opencode build (`0.0.0--…` dev snapshots) skips config plugins in serve mode and is rejected by the Zen free tier; use the official CLI.
+- **Asks stall** — the target session is busy with a long agent run; injected prompts queue behind it. Wait, `POST /session/:id/abort`, or set `sessionID` to a dedicated session.
+- **Ambiguous sends** — two instances registered with the same `name` fail closed. Give each instance a unique `name` (or `OPENCODE_INTERCOM_NAME`); use unique `PEER_NAME`s for test peers.
+- **No plugin load in serve mode** — Open Design's embedded opencode dev builds skip config plugins in serve mode and are rejected by the Zen free tier; use the official CLI.
 - **Muse Spark** — requires OpenCode-side Zen access (`opencode auth login`); free-tier models work from official clients ≥ 1.18.
-- **Scope isolation** — peers only see each other when `PI_INTERCOM_SCOPE_ID` matches; leave unset for the shared default scope.
 
-## Notes & limits
+## Development
 
-- Wire protocol is omp/pi-intercom v1 (4-byte BE length + JSON, ≤ 1 MiB frames); `protocol.ts` / `framing.ts` are ports of the upstream sources.
-- Windows transport (named pipe / TCP) is untested; macOS/Linux paths only.
+```bash
+bun install
+bun test        # full suite
+bun build src/index.ts --target=bun --outfile /dev/null   # syntax gate
+```
+
+Local install for iterating: copy the checkout to
+`~/.config/opencode/plugins/opencode-pi-intercom` and point the config
+`"plugin"` entry at `./plugins/opencode-pi-intercom.ts` re-exporting
+`IntercomPlugin`.
+
+Release flow: change → `bun test` → version bump → commit → `git push` →
+`npm publish`.
 
 ## License
 
-MIT
+MIT © Betül Tarhan
