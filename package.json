@@ -1,0 +1,40 @@
+{
+  "name": "opencode-pi-intercom",
+  "version": "0.1.0",
+  "description": "OpenCode plugin: peer with omp-intercom / pi-intercom broker sessions for agentic messaging (send/ask/reply/list).",
+  "type": "module",
+  "license": "MIT",
+  "author": "Betül Tarhan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/betulcalik/opencode-pi-intercom.git"
+  },
+  "homepage": "https://github.com/betulcalik/opencode-pi-intercom#readme",
+  "bugs": "https://github.com/betulcalik/opencode-pi-intercom/issues",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "intercom",
+    "omp",
+    "omp-intercom",
+    "pi-intercom",
+    "agent",
+    "orchestration"
+  ],
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.18.31"
+  }
+}
