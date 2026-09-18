@@ -47,6 +47,12 @@ function entryId(entry: unknown): string | null {
   return record && typeof record.id === "string" ? record.id : null;
 }
 
+function entryTitle(entry: unknown): string {
+  const record = asRecord(entry);
+  const title = record?.title;
+  return typeof title === "string" ? title : "";
+}
+
 function entryTimeUpdated(entry: unknown): number {
   const record = asRecord(entry);
   const time = asRecord(record?.time);
@@ -88,7 +94,11 @@ export class SessionBridge {
     if (this.currentSessionId) return this.currentSessionId;
     const sessions = unwrap(await this.client.session?.list?.());
     if (Array.isArray(sessions) && sessions.length > 0) {
-      const latest = [...sessions].sort((a, b) => entryTimeUpdated(b) - entryTimeUpdated(a))[0];
+      // Never auto-pick a plugin-created intercom session: it is the most
+      // recently updated one whenever a message lands in it, so it would
+      // self-reinforce and swallow every future injection.
+      const candidates = sessions.filter((s) => !entryTitle(s).startsWith("intercom"));
+      const latest = [...candidates].sort((a, b) => entryTimeUpdated(b) - entryTimeUpdated(a))[0];
       const id = entryId(latest);
       if (id) {
         this.currentSessionId = id;
